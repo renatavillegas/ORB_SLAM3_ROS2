@@ -1,6 +1,7 @@
 #include "stereo-slam-node.hpp"
 
 #include<opencv2/core/core.hpp>
+#include<chrono>
 
 using std::placeholders::_1;
 using std::placeholders::_2;
@@ -19,7 +20,6 @@ StereoSlamNode::StereoSlamNode(ORB_SLAM3::System* pSLAM, const string &strSettin
             cerr << "ERROR: Wrong path to settings" << endl;
             assert(0);
         }
-
         cv::Mat K_l, K_r, P_l, P_r, R_l, R_r, D_l, D_r;
         fsSettings["LEFT.K"] >> K_l;
         fsSettings["RIGHT.K"] >> K_r;
@@ -47,10 +47,8 @@ StereoSlamNode::StereoSlamNode(ORB_SLAM3::System* pSLAM, const string &strSettin
         cv::initUndistortRectifyMap(K_l,D_l,R_l,P_l.rowRange(0,3).colRange(0,3),cv::Size(cols_l,rows_l),CV_32F,M1l,M2l);
         cv::initUndistortRectifyMap(K_r,D_r,R_r,P_r.rowRange(0,3).colRange(0,3),cv::Size(cols_r,rows_r),CV_32F,M1r,M2r);
     }
-
-    left_sub = std::make_shared<message_filters::Subscriber<ImageMsg> >(shared_ptr<rclcpp::Node>(this), "camera/left");
-    right_sub = std::make_shared<message_filters::Subscriber<ImageMsg> >(shared_ptr<rclcpp::Node>(this), "camera/right");
-
+    left_sub = std::make_shared<message_filters::Subscriber<ImageMsg> >(this, "/zed2i/zed_node/left/image_rect_color");
+    right_sub = std::make_shared<message_filters::Subscriber<ImageMsg> >(this, "/zed2i/zed_node/right/image_rect_color");
     syncApproximate = std::make_shared<message_filters::Synchronizer<approximate_sync_policy> >(approximate_sync_policy(10), *left_sub, *right_sub);
     syncApproximate->registerCallback(&StereoSlamNode::GrabStereo, this);
 }
@@ -96,6 +94,20 @@ void StereoSlamNode::GrabStereo(const ImageMsg::SharedPtr msgLeft, const ImageMs
     }
     else
     {
+        std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
         m_SLAM->TrackStereo(cv_ptrLeft->image, cv_ptrRight->image, Utility::StampToSec(msgLeft->header.stamp));
+        std::chrono::steady_clock::time_point t2 = std::chrono::steady_clock::now();
+        double ttrack= std::chrono::duration_cast<std::chrono::duration<double> >(t2 - t1).count();
+        //std::cout << "Tracking time = " << ttrack << std::endl;
+        std::ofstream logFile("tracking_times.csv", std::ios::app);
+        if (logFile.is_open())
+        {
+            logFile << ttrack << "\n"; // Save each tracking time in a new line
+            logFile.close();
+        }
+        else
+        {
+            std::cerr << "Failed to open tracking_times.csv for writing." << std::endl;
+        }
     }
 }
