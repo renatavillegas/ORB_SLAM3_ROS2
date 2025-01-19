@@ -57,10 +57,10 @@ StereoInertialNode::StereoInertialNode(ORB_SLAM3::System *SLAM, const string &st
         cv::initUndistortRectifyMap(K_r, D_r, R_r, P_r.rowRange(0, 3).colRange(0, 3), cv::Size(cols_r, rows_r), CV_32F, M1r_, M2r_);
     }
 
-    subImu_ = this->create_subscription<ImuMsg>("imu", 1000, std::bind(&StereoInertialNode::GrabImu, this, _1));
-    subImgLeft_ = this->create_subscription<ImageMsg>("camera/left", 100, std::bind(&StereoInertialNode::GrabImageLeft, this, _1));
-    subImgRight_ = this->create_subscription<ImageMsg>("camera/right", 100, std::bind(&StereoInertialNode::GrabImageRight, this, _1));
-
+    subImu_ = this->create_subscription<ImuMsg>("/zed2i/zed_node/imu/data", 1000, std::bind(&StereoInertialNode::GrabImu, this, _1));
+    subImgLeft_ = this->create_subscription<ImageMsg>("/zed2i/zed_node/left/image_rect_color", 100, std::bind(&StereoInertialNode::GrabImageLeft, this, _1));
+    subImgRight_ = this->create_subscription<ImageMsg>("/zed2i/zed_node/right/image_rect_color", 100, std::bind(&StereoInertialNode::GrabImageRight, this, _1));
+    std::cout << "Call SyncThread" << std::endl;
     syncThread_ = new std::thread(&StereoInertialNode::SyncWithImu, this);
 }
 
@@ -91,7 +91,6 @@ void StereoInertialNode::GrabImageLeft(const ImageMsg::SharedPtr msgLeft)
     if (!imgLeftBuf_.empty())
         imgLeftBuf_.pop();
     imgLeftBuf_.push(msgLeft);
-
     bufMutexLeft_.unlock();
 }
 
@@ -102,7 +101,6 @@ void StereoInertialNode::GrabImageRight(const ImageMsg::SharedPtr msgRight)
     if (!imgRightBuf_.empty())
         imgRightBuf_.pop();
     imgRightBuf_.push(msgRight);
-
     bufMutexRight_.unlock();
 }
 
@@ -134,16 +132,26 @@ cv::Mat StereoInertialNode::GetImage(const ImageMsg::SharedPtr msg)
 void StereoInertialNode::SyncWithImu()
 {
     const double maxTimeDiff = 0.01;
-
     while (1)
     {
         cv::Mat imLeft, imRight;
         double tImLeft = 0, tImRight = 0;
+        if(imgLeftBuf_.empty())
+        {
+            std::cout << "imgLeftBuf_ empty" << std::endl;
+        }
+        else if (imgRightBuf_.empty())
+        {
+            std::cout << "imgRightBuf_ empty" << std::endl;
+        }
+        else if (imuBuf_.empty())
+        {
+            std::cout << "imuBuf_ empty" << std::endl;
+        }
         if (!imgLeftBuf_.empty() && !imgRightBuf_.empty() && !imuBuf_.empty())
         {
             tImLeft = Utility::StampToSec(imgLeftBuf_.front()->header.stamp);
             tImRight = Utility::StampToSec(imgRightBuf_.front()->header.stamp);
-
             bufMutexRight_.lock();
             while ((tImLeft - tImRight) > maxTimeDiff && imgRightBuf_.size() > 1)
             {
